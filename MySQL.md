@@ -804,7 +804,7 @@ SQL语句执行很慢，如何分析？
 
 举例：
 
-status采用范围，那么status右边的索引就不能生效了，也就是address无法生效
+status采用范围查询，那么status右边的索引就不能生效了，也就是address无法生效
 
 <img src="./assets/image-20240331092705983.png" style="zoom:50%;" />
 
