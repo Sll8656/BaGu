@@ -230,7 +230,7 @@ Bitmap存储的是连续的二进制数字，通过Bitmap，只需要一个比�
 
 
 
-## 三大问题
+# 三大问题
 
 
 
@@ -249,6 +249,8 @@ Bitmap存储的是连续的二进制数字，通过Bitmap，只需要一个比�
 如果缓存和MySQL都查不到某个key，就将这个key写入Redis中并设置过期时间。应对请求变化不频繁的情况。
 
 2）布隆过滤器
+
+![image-20240622175816627](./assets/image-20240622175816627.png) 
 
 布隆过滤器是一种数据结构，可以判断一个给定的数据是否存在于海量的数据中。
 
@@ -481,7 +483,7 @@ redis过期删除策略：惰性+定期配合使用
 * noeviction：不淘汰任何key，内存满了不允许写入新数据
 * volatile-ttl：对设置了TTLkey，比较key的剩余TTL，TTL小的淘汰
 * allkeys-random：全体key随机淘汰
-* volatile-dandoim:对设置了TTL的key，随机进行淘汰
+* volatile-dandom:对设置了TTL的key，随机进行淘汰
 * allkeys-lru：全体key，采用LRU算法进行淘汰
 * volatile-lru：对设置了key的进行lru
 * allkeys-lfu:对全体key，基于LFU进行淘汰
@@ -545,7 +547,7 @@ redis集群带来的问题：redis不是单个的了，那么就要保证每个�
 
 
 
-## 其他
+## 主从同步
 
 问：Redis集群有哪些方案？
 
@@ -589,13 +591,20 @@ step3：master在记录RDB期间，接受的其他命令会记录到repl_baklog�
 
  问：说一下同步数据的流程
 
+![image-20240622104817721](./assets/image-20240622104817721.png)
+
 全量同步：
 
-1）从节点请求主节点同步数据（replication id， offset）
+replicationID：每一个master结点都有自己唯一的id，简称replid。从节点的replid就是主的replid，类似并查集的思想。
 
-2）主节点判断是不是第一次，是第一次就和从节点同步版本信息
+1）从节点请求主节点同步数据，尝试psync，并带上replid和offset。
 
-3）主节点执行bgsava，生成rdb文件后发给slave去执行
+2）主节点判断是不是第一次：
+
+* 查看replid**是否和主节点的一致**，如果不一致，说明是第一次。是第一次就和从节点同步版本信息
+* 查看offset是否被覆盖，如果被覆盖了，说明断开太久了，也只能采用全量。
+
+3）主节点执行bgsava，生成rdb文件（保存的是master的数据）后发给slave去执行
 
 4）在rdb生成期间，mater以命令的方式记录到缓冲区（一个日志文件）
 
@@ -603,9 +612,31 @@ step3：master在记录RDB期间，接受的其他命令会记录到repl_baklog�
 
 增量同步：
 
-1）从节点请求主节点同步数据，主节点判断是不是第一次请求，不是就获取从节点offset值
+**环形**内存缓冲区：repl_backlog，记录master执行过的命令。在第一次建立主从同步后，开始记录所有写操作命令。
+
+offset：repl_backlog中写入过的数据长度，写操作越多，offset值越大，主从的offset一致代表数据一致。
+
+1）从节点请求主节点同步数据,尝试psync，主节点判断是不是第一次请求，不是就获取从节点offset值
 
 2）主节点从命令日志中获取到offset值之后的数据，发送给从节点进行同步
+
+同步完成后：每当master写数据时，都会讲命令传播给slave，保持实时同步。
+
+
+
+**优化方法：**
+
+1）在master中配置repl-diskless-sync yes启用无磁盘复制，避免全量同步时的磁盘IO
+
+2）Redis单节点内存占用不要太大，减少RDB导致的过多磁盘IO
+
+3）适当提高repl_baklog的大小，发现slave宕机时尽快实现故障恢复，尽可能避免全量同步
+
+4）限制一个master上的slave节点数量，如果实在太多slave，可以用主-从-从链式结构，减少master压力。
+
+**总结：**
+
+![image-20240622111212419](./assets/image-20240622111212419.png)
 
 
 
@@ -633,13 +664,21 @@ Sentinel基于心跳机制检测服务状态，每隔1秒向集群的每个实�
 * slave-priority一样的话，判断slave结点的offset值，越大优先级越高
 * 最后判断slave结点的运行id，越小优先级越高
 
+**故障转移：**
 
+* sentinel给备选的slave1节点发送slaveof no one命令，让给节点成为master。
+* sentinel给其他slave发送slaveof 192.168.150.101 7002命令，让这些slave成为新master的从节点，开始从新的master上同步数据。
+* 最后，sentinel将故障节点标记为slave，当故障节点恢复后会自动成为新的master的slave节点。
 
 **脑裂：**
 
 脑裂现象：原master网络不稳定，但是还没挂，客户端能正常连接。而Sentinel和master网络处于不同分区，又因为master网络不稳定，所以监测不到master了，于是选了一个新的master。但是客户端还认原来的，于是往原master写数据。网络恢复正常，原master成为了slave，向新master同步数据。那么就会丢失一部分数据了。
 
 解决：修改redis的配置，设置最少的从节点数量以及缩短主从数据同步的延迟时间，达不到要求就拒绝请求，可以避免大量的数据丢失
+
+**小结：**
+
+![image-20240622143810359](./assets/image-20240622143810359.png)
 
 ---
 
@@ -727,3 +766,7 @@ Linux系统为了提高IO效率，会在用户空间和内核空间都加入缓�
 答：Redis基于内存，速度很快。性能瓶颈是`网络延迟`而不是执行速度，IO多路复用模型主要实现了高效的网络请求。他利用单个线程同时监听多个socket，并在某个socket可读、可写时得到通知，从而避免无效的等待，充分利用CPU资源。目前IO多路复用采用`epoll`模式实现，会通知用户进程Socket就绪的同时，把已就绪的Socket写入用户空间，不需要遍历Socket开判断是否就绪，提升了性能
 
   
+
+IO多路复用的三种实现方式总结：
+
+![image-20240628191932661](./assets/image-20240628191932661.png)
