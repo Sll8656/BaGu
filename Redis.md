@@ -1,3 +1,7 @@
+[TOC]
+
+
+
 # 基础篇
 
 ### 什么是Redis？
@@ -250,7 +254,7 @@ Bitmap存储的是连续的二进制数字，通过Bitmap，只需要一个比�
 
 2）布隆过滤器
 
-![image-20240622175816627](./assets/image-20240622175816627.png) 
+![image-20240622175816627](https://s2.loli.net/2024/09/18/OvesmCEoutM32i9.png) 
 
 布隆过滤器是一种数据结构，可以判断一个给定的数据是否存在于海量的数据中。
 
@@ -270,7 +274,7 @@ Bitmap存储的是连续的二进制数字，通过Bitmap，只需要一个比�
 
 场景：秒杀的时候，缓存中商品的key突然过期。于是大量请求直接打到了数据库。
 
-<img src="./assets/image-20231219201537681.png" style="zoom:50%;" />
+<img src="https://s2.loli.net/2024/09/18/fEoNgp84uvCTaMH.png" style="zoom:50%;" />
 
 
 
@@ -279,7 +283,7 @@ Bitmap存储的是连续的二进制数字，通过Bitmap，只需要一个比�
 * 设置热点数据永不过期，或者过期时间较长
 * 针对热点数据提前预热，确保存进缓存并且在秒杀结束前都不会过期。
 * 请求数据库写数据到缓存之前要先获取互斥锁，保证只有一个请求打到数据库，减少数据库压力。
-* 设置互斥锁，让线程查不到就等待一会，而不是立马去在数据库上重建缓存<img src="./assets/image-20231219201717510.png" style="zoom:33%;" />
+* 设置互斥锁，让线程查不到就等待一会，而不是立马去在数据库上重建缓存<img src="https://s2.loli.net/2024/09/18/qnRwfVDkZ61GNcl.png" style="zoom:33%;" />
 
 
 
@@ -350,7 +354,7 @@ Key不存在：穿透
 
 缓存更新是用于解决Redis内存不足的问题：
 
-![image-20231219162201029](./assets/image-20231219162201029.png)
+![image-20231219162201029](https://s2.loli.net/2024/09/18/YxgcPF9RAdLZOSE.png)
 
 使用**主动更新策略**最好。
 
@@ -382,15 +386,15 @@ Write Behind Caching Pattern ：调用者只操作缓存，其他线程去异步
 
 3、先操作缓存还是先删数据库：
 
-![image-20231219161333638](./assets/image-20231219161333638.png)
+![image-20231219161333638](https://s2.loli.net/2024/09/18/adgP6c4LNvhlbzB.png)
 
 前置知识：更新数据库操作速度慢，操作缓存速度快。
 
 先删除缓存，再操作数据库：更新数据库慢，所以容易被别的线程见缝插针
 
-先操作数据库，再删除缓存：写入缓存快，并且更新数据库满。别的线程难以插入操作缓存的方法之间。
+先更新数据库，再删除缓存：写入缓存快，并且更新数据库慢。别的线程难以插入操作缓存的方法之间。
 
-因此先操作数据库比先删除缓存更好！
+因此先更新数据库比先删除缓存更好！
 
 
 
@@ -557,19 +561,19 @@ redis中提供了三种集群方式：主从复制、哨兵模式、分片模型
 
 ​	单节点Redis的并发能力是有限的，要提高并发能力，就要搭建主从集群，实现读写分离
 
-​	<img src="./assets/image-20240329152124506.png" style="zoom:50%;" />
+​	<img src="https://s2.loli.net/2024/09/18/7AMOPRw36aE5mbh.png" style="zoom:50%;" />
 
 主从数据同步原理：
 
 主从**全量同步**： 
 
-![image-20240329152415260](./assets/image-20240329152415260.png)
+![image-20240329152415260](https://s2.loli.net/2024/09/18/KoJjkURbBv9wdn5.png)
 
 1、master如何判断slave是不是第一次请求
 
 2、后期同步都是从日志文件记录命令然后发送给从结点执行，如何确保主从同步的时候正好不多不少，正式从节点需要的那部分数据。
 
-![image-20240329152807554](./assets/image-20240329152807554.png)
+![image-20240329152807554](https://s2.loli.net/2024/09/18/pgiWMtLXCRlD69E.png)
 
 step1：slave发起请求给master，想要同步数据，master判断是不是第一次请求。是就全量同步
 
@@ -581,7 +585,7 @@ step3：master在记录RDB期间，接受的其他命令会记录到repl_baklog�
 
 **增量同步**：
 
-![image-20240329153603553](./assets/image-20240329153603553.png)
+![image-20240329153603553](https://s2.loli.net/2024/09/18/kiF2eXu5z1pPWIb.png)
 
 
 
@@ -591,7 +595,7 @@ step3：master在记录RDB期间，接受的其他命令会记录到repl_baklog�
 
  问：说一下同步数据的流程
 
-![image-20240622104817721](./assets/image-20240622104817721.png)
+![image-20240622104817721](https://s2.loli.net/2024/09/18/RBEAtrp5fUcWvyd.png)
 
 全量同步：
 
@@ -604,7 +608,7 @@ replicationID：每一个master结点都有自己唯一的id，简称replid。�
 * 查看replid**是否和主节点的一致**，如果不一致，说明是第一次。是第一次就和从节点同步版本信息
 * 查看offset是否被覆盖，如果被覆盖了，说明断开太久了，也只能采用全量。
 
-3）主节点执行bgsava，生成rdb文件（保存的是master的数据）后发给slave去执行
+3）主节点执行bgsave，生成rdb文件（保存的是master的数据）后发给slave去执行
 
 4）在rdb生成期间，mater以命令的方式记录到缓冲区（一个日志文件）
 
@@ -636,17 +640,17 @@ offset：repl_backlog中写入过的数据长度，写操作越多，offset值�
 
 **总结：**
 
-![image-20240622111212419](./assets/image-20240622111212419.png)
+![image-20240622111212419](https://s2.loli.net/2024/09/18/mxFtz3kNuDHvIGs.png)
 
 
 
 ## 哨兵
 
-Redis提供了哨兵机制来实现主从集群的自动故障恢复。哨兵的结构和作用：
+Redis提供了哨兵机制来实现主从集群的自动故障恢复。哨兵的结构和作用：**监控、选主、通知**
 
 * 监控：Sentinel会不断检查master和slave是否按预期工作
-* 自动故障恢复：如果master故障，Sentinel会将一个slave提升为master
-* Sentinel充当Redis客户端的服务发现来源，当集群发生故障转移时，会将最新信息推送给Redis的客户端
+* 自动故障恢复（选主）：如果master故障，Sentinel会将一个slave提升为master
+* 通知：Sentinel充当Redis客户端的服务发现来源，当集群发生故障转移时，会将最新信息推送给Redis的客户端
 
 保证了主从模式的高可用。
 
@@ -666,7 +670,7 @@ Sentinel基于心跳机制检测服务状态，每隔1秒向集群的每个实�
 
 **故障转移：**
 
-* sentinel给备选的slave1节点发送slaveof no one命令，让给节点成为master。
+* sentinel给备选的slave1节点发送slaveof no one命令，让该节点成为master。
 * sentinel给其他slave发送slaveof 192.168.150.101 7002命令，让这些slave成为新master的从节点，开始从新的master上同步数据。
 * 最后，sentinel将故障节点标记为slave，当故障节点恢复后会自动成为新的master的slave节点。
 
@@ -678,7 +682,7 @@ Sentinel基于心跳机制检测服务状态，每隔1秒向集群的每个实�
 
 **小结：**
 
-![image-20240622143810359](./assets/image-20240622143810359.png)
+![image-20240622143810359](https://s2.loli.net/2024/09/18/7QcOJzHh3ik5rmp.png)
 
 ---
 
@@ -722,7 +726,7 @@ Sentinel基于心跳机制检测服务状态，每隔1秒向集群的每个实�
 * 将16384个插槽分配到不同的实例
 * 读写数据：根据key的**有效部分**（如果key前面有大括号，大括号内容就是有效部分，如果没有，key本身就是有效部分）计算哈希值，对16384取余，余数作为插槽，寻找插槽所在的实例。
 
-![image-20240420151432055](./assets/image-20240420151432055.png)
+![image-20240420151432055](https://s2.loli.net/2024/09/18/fsXSbpjhg6Fl74m.png)
 
 
 
@@ -769,4 +773,4 @@ Linux系统为了提高IO效率，会在用户空间和内核空间都加入缓�
 
 IO多路复用的三种实现方式总结：
 
-![image-20240628191932661](./assets/image-20240628191932661.png)
+![image-20240628191932661](https://s2.loli.net/2024/09/18/CfjPBSaLpbTmvuQ.png)
