@@ -270,6 +270,18 @@ JVM垃圾回收算法有哪些？
 
 ---
 
+**分代GC：**
+
+堆内存 = 年轻代 + 老年代。 年轻代 = Eden + Survivor0 + Survivor1
+
+过程：新对象放在Eden，存活后放进Survivor，每次存活年龄++，最大15岁后进入老年代。
+
+![image-20240518133048816](https://s2.loli.net/2024/09/26/5uOdrHEse8mBhAR.png)
+
+当老年代中空间不足，无法放入新的对象，先尝试minor gc，如果还是不够，就会触发Full GC。Full GC会对整个堆进行垃圾回收。
+
+---
+
 问：JVM垃圾回收算法有哪些
 
 答：
@@ -316,6 +328,12 @@ JVM垃圾回收算法有哪些？
 2、对象分代回收的策略
 
 新创建的对象会先分配到eden区，当eden不足时，标记eden和from的存活对象，将存活对象采用复制算法复制到to中，存活的对象年龄+1，复制完毕后，eden和from内存都得到释放。经过一段时间后，eden的内存又出现不足，标记eden和新的from区存活的对象，将其复制到to区，存活的对象年龄+1，当对象的年龄到达15，就会进入老年代。
+
+---
+
+问：为什么分代GC算法要把堆分成年轻代和老年代。
+
+![image-20240518134841920](https://s2.loli.net/2024/09/26/Rz5d9jngQ4C6DEP.png)
 
 ---
 
@@ -380,6 +398,104 @@ CMS全称Concurrent Mark Sweep，是一款并发的，使用标记-清除算法�
 * 响应时间与吞吐量兼顾
 * 分成三个阶段：新生代回收(stw)、并发标记（重新stw）、混合收集
 * 如果并发失败（回收速度赶不上创建新对象速度），会触发FullGC
+
+---
+
+
+
+## **垃圾回收器的组合关系**
+
+![image-20240518134954046](https://s2.loli.net/2024/09/26/wfpNAMWICuSaq74.png)
+
+---
+
+组合1
+
+**年轻代-Serial垃圾回收器**
+
+<img src="https://s2.loli.net/2024/09/26/YtGVueoNOHQRwEb.png" style="zoom:30%;" />
+
+**老年代-SerialOld垃圾回收器**
+
+<img src="https://s2.loli.net/2024/09/26/nQFavfIwmS1busR.png" alt="image-20240518135313998" style="zoom:30%;" />
+
+---
+
+组合2
+
+**年轻代-ParNew垃圾回收器**（==多线程==回收年轻代的垃圾）
+
+<img src="https://s2.loli.net/2024/09/26/dUvza5pwgRsZDkK.png" alt="image-20240518135633538" style="zoom:30%;" />
+
+**老年代-CMS（Concurrent Mark Sweep）垃圾回收器**（减少SWT对用户线程的影响）
+
+ <img src="https://s2.loli.net/2024/09/26/hp7g3DRrcuiyPMK.png" alt="image-20240518135848820" style="zoom:30%;" />
+
+**cms的执行步骤**
+
+<img src="https://s2.loli.net/2024/09/26/5OrbwApjYceCsmV.png" alt="image-20240518140056199" style="zoom:33%;" />
+
+---
+
+组合3
+
+**年轻代-Parallel Scavenge垃圾回收器**（关注吞吐量）
+
+<img src="https://s2.loli.net/2024/09/26/9LzYCd1EoujbGIx.png" alt="image-20240518140524868" style="zoom:33%;" />
+
+**老年代-Parallel Old垃圾回收器**
+
+<img src="https://s2.loli.net/2024/09/26/PecWYpRyaFKOrIz.png" alt="image-20240518140654735" style="zoom:33%;" />
+
+---
+
+==**G1**==
+
+<img src="https://s2.loli.net/2024/09/26/3Sq1HsjQrkivwRZ.png" alt="image-20240518141622339" style="zoom:33%;" />
+
+G1出现之前的内存结构：
+
+<img src="https://s2.loli.net/2024/09/26/z1okE49T3A5puhc.png" alt="image-20240518141748988" style="zoom:33%;" />
+
+G1的内存结构：
+
+<img src="https://s2.loli.net/2024/09/26/CM1uwy687HGh5Nz.png" alt="image-20240518141820904" style="zoom:33%;" />
+
+G1垃圾回收器有两种方式：年轻代回收(Young GC)和混合回收(Mixed GC)
+
+Young GC：回收Eden和Survivor区中不用的对象，会导致STW，可以通过参数`-XX:MaxGCPauseMillis=n`(默认200)设置每次垃圾回收时的最大暂停时间毫秒数，G1垃圾回收器会尽可能地2保证暂停时间。
+
+1、新创建的对象会存放在Eden区，当G1判断年轻代区不足（max默认60%），无法分配对象时会执行Young GC
+
+2、标记出Eden和Survivor区域中存活的对象
+
+3、根据配置的最大暂停时间选择某些区域将存活对象复制到一个新的Survivor区中（年龄+1），清空这些区域
+
+
+
+<img src="https://s2.loli.net/2024/09/26/rZaWvsnh9F73R2J.png" alt="image-20240518142459367" style="zoom:33%;" />
+
+4、后续Young GC与之前的相同，只不过Survivor区中存活对象会被搬运到另一个Survivor区
+
+5、当某个存活对象的年龄达到阈值，就会被放入老年代
+
+6、部分对象如果大小超过Region的一般，会直接放入老年代，这类老年被称为Humongous区。比如堆内存4G，每个Region是2M，只要一个大对象超过了1M就被放入 区，如果对象过大会横跨多个Region。
+
+7、多次回收之后，会出现很多Old老年代区，此时总堆占有率达到阈值时，会触发混合回收Mixed GC（默认45%），回收所有年轻代和部分老年代的对象以及大对象区。采用复制算法完成。
+
+MixGC:
+
+<img src="https://s2.loli.net/2024/09/26/Aztr3heCKNGHx52.png" alt="image-20240518143314320" style="zoom: 33%;" />
+
+<img src="https://s2.loli.net/2024/09/26/gWsxtDNzSiVyuTK.png" alt="image-20240518143503882" style="zoom:33%;" />
+
+<img src="https://s2.loli.net/2024/09/26/BmIA3bkVgn7S8HJ.png" alt="image-20240518143531142" style="zoom:33%;" />
+
+小结：
+
+![image-20240518143638870](https://s2.loli.net/2024/09/26/cVZLRrXqlGuDkEs.png)
+
+
 
 ---
 

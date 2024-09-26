@@ -700,7 +700,7 @@ SoftReference提供了一套队列机制：
 
 问：为什么分代GC算法要把堆分成年轻代和老年代。
 
-![image-20240518134841920](./assets/image-20240518134841920.png)
+![image-20240518134841920](https://s2.loli.net/2024/09/26/q8rBTHgta9bzdex.png)
 
 **垃圾回收器的组合关系**
 

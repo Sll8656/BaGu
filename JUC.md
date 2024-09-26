@@ -123,11 +123,53 @@
 
  问：Synchronized的原理
 
+64位虚拟机中 一个对象由mark word和class word组成， classword存储类的相关信息，mark word由hash值，分代年龄，锁标识组成。
+
+重量级锁：将mark word指向monitor，如果owner为空。则monitor的owner标记为本线程，如果已经有owner了，则进入EntryList。等待owner释放之后，EntryList中的线程再竞争锁
+
 答：
 
 * Synchronized采用互斥的方式让统一时刻最多室友一份线程能持有对象锁
 * 底层由monitor实现，monitor是jvm级别的对象（ c++实现），线程获得锁需要使用对象（锁）关联monitor
 * 在monitor内部有三个属性，分别是owner、entrylist、waitset。owner是关联的获得锁的线程，并且只能关联一个线程；entrylist关联的事处于阻塞状态的线程；waitset关联的是处于waiting状态的线程
+
+---
+
+轻量级锁：
+
+1. 线程生成**锁记录**，并且将锁记录的地址与对象锁的mark word交换。
+2. 有新线程要获取锁了，新增一条锁记录，然后去Object中尝试cas，如果发现锁记录地址是自己的线程。就说明是重入。如果不是自己的线程，就进入锁膨胀
+3. 释放锁就锁记录逐个消除
+
+![image-20240926145849764](https://s2.loli.net/2024/09/26/GTv9YxlctZjB41i.png)
+
+---
+
+锁膨胀：
+
+Thread-1获取锁发现锁记录地址不是自己，就让Object指向monitor，monitor的owner是Thread-0,自己进入EntryList
+
+释放锁的时候就正常设置owner为null然后唤醒EntryList中的线程。
+
+![image-20240926150904832](https://s2.loli.net/2024/09/26/HzUfRJsG8uiPKom.png)
+
+---
+
+偏向锁：
+
+轻量级锁在没有竞争时(就自己这个线程)，每次重入仍然需要执行CAS操作。
+
+Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将**线程ID**（偏向锁是**锁记录**）设置到对象的 Mark Word头，之后发现这个线程ID是自己的就表示没有竞争，不用重新CAS。以后只要不发生竞争，这个对象就归该线程所有
+
+<img src="https://s2.loli.net/2024/09/26/V2qWM5u6KYtP87i.png" style="zoom:50%;" />
+
+---
+
+自适应锁：
+
+重量级锁竞争的时候，还可以使用自旋来进行优化，如果当前线程自旋成功(即这时候持锁线程已经退出了同步块，释放了锁)，这时当前线程就可以避免阻塞。
+
+<img src="https://s2.loli.net/2024/09/26/5NIA1celkwaujQ6.png" style="zoom:50%;" />
 
 ---
 
@@ -201,7 +243,7 @@ synchronized是基于悲观锁的思想：我上锁了，你们都不能改，�
 
 说说volatile
 
-一旦一个共享变量（类的成员变量、类的静态成员变量）被volatile修饰之后，MAME就具备了两层语义：
+一旦一个共享变量（类的成员变量、类的静态成员变量）被volatile修饰之后，就具备了两层语义：
 
 * **保证线程间的可见性**
 
@@ -353,7 +395,21 @@ AQS的常见实现类：
 
 ReentrantLock的实现原理
 
-ReentrantLock叫做可重入锁，相对于synchronized具备以下特点：
+默认非公平实现，`NofariSync`示意图：
+
+<img src="https://s2.loli.net/2024/09/26/b81GDd23tqrwkmE.png" style="zoom:50%;" />
+
+Thread-0：CAS成功，`exclusiveOwnerThread`标记为Thread-0。
+
+Thread-1：CAS失败，tryAcquire失败，构造AQS队列，进入AQS队列等待。
+
+Thread-0释放锁以后，唤醒AQS队列中的第一个等待线程Thread-1，Thread-1会再次尝试tryAcquire。如果锁已经释放，就CAS成功，修改state为1。如果被插队了，重新进入等待队列。
+
+只要进入aqs队列了，就一定是先后顺序。Reentrant lock非公平锁的非公平体现在还没有进入aqs队列的线程可以插队。
+
+<img src="https://s2.loli.net/2024/09/26/N7LEscbxVnd6qKW.png" alt="image-20240926155111171" style="zoom:50%;" />
+
+ReentrantLock相对于synchronized具备以下特点：
 
 * 可中断
 * 可以设置超时时间
@@ -373,7 +429,7 @@ try{
 }
 ```
 
-ReentrantLock主要**利用CAS +AQS队列**实现，支持公平锁和非公平锁，两者的实现类似
+ReentrantLock主要**利用CAS +AQS（CLH）队列**实现，支持公平锁和非公平锁，两者的实现类似
 
 构造方法接受一个可选的公平参数（默认不公平），当设置为true时，表示公平。公平锁的效率没有非公平锁高。
 
@@ -481,6 +537,10 @@ Java并发编程三大特征：
 
 ---
 
+线程池的拒绝策略：
+
+![image-20240912160324656](https://s2.loli.net/2024/09/26/tPi18kLz7ls5GJx.png)
+
 问：线程池中有哪些常见的阻塞队列
 
 ---
@@ -522,3 +582,7 @@ ThreadLoca就是线程本地量，它其实是一种线程的隔离机制，保�
 1. ThreadLocalMap中维护的Entry继承了WeakReference，其中key为==弱引用==的ThreadLocal实例，value是线程变量的副本。GC会回收掉key，保留value。
 
 解决：在finally中把ThreadLocal  Remove掉。确保任务结束后ThreadLocal被删除。
+
+**除了用户登陆外，还有哪些和用户信息无关的场景可以用到？**
+
+数据库连接管理、事务管理、日志追踪
