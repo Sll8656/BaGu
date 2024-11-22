@@ -6,7 +6,7 @@
 
 答：
 
-* 进程是正在运行程序的实力，进程中包含了线程，每个线程执行不同的任务
+* 进程是正在运行程序的实例，进程中包含了线程，每个线程执行不同的任务
 * 不同的进程使用不同的内存空间，在当前进程下的所有线程可以共享内存空间
 * 线程更轻量，线程上下文切换成本一般要比进程上下文切换低
 
@@ -129,7 +129,7 @@
 
 答：
 
-* Synchronized采用互斥的方式让统一时刻最多室友一份线程能持有对象锁
+* Synchronized采用互斥的方式让统一时刻最多只有一份线程能持有对象锁
 * 底层由monitor实现，monitor是jvm级别的对象（ c++实现），线程获得锁需要使用对象（锁）关联monitor
 * 在monitor内部有三个属性，分别是owner、entrylist、waitset。owner是关联的获得锁的线程，并且只能关联一个线程；entrylist关联的事处于阻塞状态的线程；waitset关联的是处于waiting状态的线程
 
@@ -190,7 +190,7 @@ Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将**�
 答：
 
 * JMM定义了**共享变量**中**多线程程序读写操作**的行为规范，通过这些规则来规范对内存的读写操作，从而保证指令的正确性
-* JMM把内存分为两块，一块是私有线程的工作区域（工作内存），一块是素有线程的共享区域（主内存）
+* JMM把内存分为两块，一块是私有线程的工作区域（工作内存），一块是私有线程的共享区域（主内存）
 * 线程和线程之间相互隔离，线程和线程交互需要通过主内存
 
 ---
@@ -395,7 +395,7 @@ AQS的常见实现类：
 
 ReentrantLock的实现原理
 
-默认非公平实现，`NofariSync`示意图：
+默认非公平实现，`NofairSync`示意图：
 
 <img src="https://s2.loli.net/2024/09/26/b81GDd23tqrwkmE.png" style="zoom:50%;" />
 
@@ -541,9 +541,19 @@ Java并发编程三大特征：
 
 ![image-20240912160324656](https://s2.loli.net/2024/09/26/tPi18kLz7ls5GJx.png)
 
-问：线程池中有哪些常见的阻塞队列
-
 ---
+
+在很多公司（如阿里、华为等）的编程规范中，非常明确地禁止使用Executors快捷创建线程池.
+
+使用Executors创建的**“固定数量的线程池”(newFixedThreadPool)和“单线程化线程池”(newSingleThreadExecutor)**的潜在**问题主要存在于其workQueue上**，其值为LinkedBlockingQueue（无界阻塞队列）。如果任务提交速度持续大于任务处理速度，就会造成队列中大量的任务等待。如果队列很大，很有可能导致JVM出现OOM（Out Of Memory）异常，即内存资源耗尽。
+
+使用Executors创建的**“可缓存线程池”(newCachedThreadPool)**和**可调度线程池(ScheduledThreadPoolExecutor)**的潜在问题存在于其最大线程数量不设上限。由于其maximumPoolSize的值为Integer.MAX_VALUE（非常大），可以认为是无限创建线程的，如果任务提交较多，就会造成大量的线程被启动，很有可能造成OOM异常，甚至导致CPU线程资源耗尽。
+
+总结：
+
+（1）FixedThreadPool和SingleThreadPool这两个工厂方法所创建的线程池，工作队列（任务排队的队列）长度都为Integer.MAX_VALUE，可能会堆积大量的任务，从而导致OOM（即耗尽内存资源）。
+
+（2）CachedThreadPool和ScheduledThreadPool这两个工厂方法所创建的线程池允许创建的线程数量为Integer.MAX_VALUE，可能会导致创建大量的线程，从而导致OOM问题。
 
 # ThreadLocal
 
@@ -567,6 +577,8 @@ ThreadLoca就是线程本地量，它其实是一种线程的隔离机制，保�
 
 3.全局存储信息：例如在前后端分离的应用中，ThreadLocal可以用来在服务端维护用户的上下文信息或者一些配置信息，而不需要通过HTTP请求携带大量的用户信息。这样做可以在不改变原有架构的情况下，提供更好的用户体验。
 
+**总结：**ThreadLocal 适用于每个线程需要自己独立的实例且该实例需要在多个方法中被使用，也即变量在线程间隔离而在方法或类间共享的场景
+
 **ThreadLocal原理**
 
 <img src="https://s2.loli.net/2024/09/13/wAQREY9orJNkUu5.png" alt="image-20240526214626398" style="zoom: 50%;" />
@@ -586,3 +598,156 @@ ThreadLoca就是线程本地量，它其实是一种线程的隔离机制，保�
 **除了用户登陆外，还有哪些和用户信息无关的场景可以用到？**
 
 数据库连接管理、事务管理、日志追踪
+
+## static final 修饰
+
+规范：推荐使用static final 修饰ThreadLocal对象
+
+ThreadLocal 实例作为ThreadLocalMap的Key，针对一个线程内所有操作是共享的，所以建议设置static修饰符，以便被所有的对象共享。
+
+由于静态变量会在类第一次被使用时装载，只会分配一次存储空间，此类的所有实例都会共享这个存储空间，所以使用 static 修饰ThreadLocal 就会节约内存空间。
+
+另外，为了确保ThreadLocal 实例的唯一性，除了使用static修饰之外，还会使用 final 进行加强修饰，以防止其在使用过程中发生动态变更。参考的实例如下：
+
+```java
+//推荐使用static final线程本地变量
+private static final ThreadLocal<Foo> LOCAL_FOO = new ThreadLocal<Foo>();
+```
+
+由于使用static 、final修饰TheadLocal对象实例， 导致了这个被 ThreadLocalMap中Entry的Key所引用的ThreadLocal对象实例，一直存在强引用。
+
+这里有一个严重后果，这个 使用static 、final修饰TheadLocal对象实例 一直不会被GC，一直存在，一直存在......
+
+![image-20241115102008027](./assets/image-20241115102008027.png)
+
+## **InheritableThreaLocal**
+
+在 Java 中，每个线程都有自己的线程本地变量，称为 ThreadLocal 变量。然而，在使用线程池或创
+
+建线程组时，可能会遇到一个问题：子线程无法访问父线程的 ThreadLocal 变量，这就是线程继承问
+
+题。
+
+InheritableThreadLocal 的作用就是解决这个问题。
+
+* 当一个线程创建子线程时，子线程会继承父线程的 InheritableThreadLocal 变量的值。
+
+* 这样，子线程就可以直接访问父线程的 InheritableThreadLocal 变量，而不需要手动传递值。
+
+使用 InheritableThreadLocal 类似于使用普通的 ThreadLocal ，你可以通过 set() 方法设置变量
+
+的值，通过 get() 方法获取变量的值。但是， InheritableThreadLocal 会在创建子线程时自动继
+
+承父线程的变量值。
+
+InheritableThreaLocal 主要是要用于主子线程之间传递参数的，这种方式有一个问题，那就是**必须要是在主线程中手动创建的子线程才可以**，但对于使用线程池等池化复用线程的执行组件的情况，很多时候线程都是通过线程池进行创建和复用的，这时候 InheritableThreaLocal 就无计可施了。
+
+**1.线程不安全**
+
+如果说线程本地变量是只读变量不会受到影响，但是如果是可写的，那么任意子线程针对本地变量的修改都会影响到主线程的本地变量（本质上是同一个对象），子线程写入后会覆盖掉主线程的变量，也是通过这个结果，我们确认了子线程TLMap里变量指向的对象和父线程是同一个。
+
+**2.线程池中可能失效** 
+
+按照上述实现，在使用线程池的时候，ITL会完全失效，因为父线程的TLMap是通过init一个Thread的时候进行赋值给子线程的，而线程池在执行异步任务时可能不再需要创建新的线程了，因此也就不会再传递父线程的TLMap给子线程了。
+
+## **TransmittableThreadLocal** 
+
+主要解决了传统 ThreadLocal 和 InheritableThreadLocal 在 **线程池或异步执行框架**中使用时的上下文传递问题。
+
+在多线程或线程池环境中，InheritableThreadLocal 允许子线程继承父线程的变量，但它无法处理线程池场景，因为线程池中的线程是重复使用的，子线程执行完任务后，线程会被归还线程池，变量可能残留或被覆盖，导致数据不一致或泄露。而 TransmittableThreadLocal 专门为了解决这一问题。
+
+TTL 通常用于需要在线程池中执行任务，并且需要在**任务之间传递 ThreadLocal 值**的场景。
+
+例如，在 Web 应用中，可能需要在异步任务中访问当前用户的会话信息，而使用 TTL 可以确保子线程能够正确访问父线程设置的会话信息。
+
+他本质上也是一个InheritableThreadLocal
+
+```java
+public class TransmittableThreadLocal<T>
+extends InheritableThreadLocal<T> implements TtlCopier<T> {}
+```
+
+ 具体值是保存在线程内部的**inheritableThreadLocals**，不涉及线程池时可以当成
+
+InheritableThreadLocal使用。
+
+**TransmittableThreadLocal重要核心属性holder**：
+
+```java
+1. holder 本质上是一个 InheritableThreadLocal(a ThreadLocal).
+
+2. 内部的值的类型是 WeakHashMap<TransmittableThreadLocal<Object>, ?>.
+
+ 	2.1 这个 WeakHashMap 被当成一个 Set 使用:这个WeakHashMap的value永远是null, 不会被使用到.
+
+  2.2 WeakHashMap 支持 null 作为value.
+
+```
+
+通过holder可以找到Java进程中所有的TransmittableThreadLocal（即使用WeakHashMap收集线程中所有的TransmittableThreadLocal）。
+
+ThreadLocal.ThreadLocalMap和WeakHashMap的区别？
+
+1. 相同点：ThreadLocalMap.Entry和WeakHashMap都继承弱引用，弱引用的reference都指
+
+向key ：ThreadLocalMap.Entry:
+
+2. 不同点：ThreadLocalMap是一个用移位解决hash冲突的简易Map，而WeakHashMap是一
+
+个用链表解决hash冲突的简易Map；
+
+## FastThreadLocal
+
+FastThreadLocal 是 Netty 框架提供的一个高效线程局部变量（Thread Local）实现。它基于 ThreadLocal，但相比 Java 自带的 ThreadLocal，它具有更高的性能和更低的内存消耗。FastThreadLocal 的设计目标是为 Netty 提供一个在高并发环境下表现出色的线程局部变量解决方案，以适应 Netty 的网络编程需求。
+
+
+
+Netty 的 FastThreadLocal 使用了线程局部存储（Thread-Local Storage, TLS）的概念，但它通过一
+
+些优化手段减少了内存占用和性能开销。
+
+1. **内存池化**： FastThreadLocal 使用了一个对象池来管理线程局部变量的实例，从而避免了频繁的创建和销毁操作。
+
+2. **索引快速访问**： FastThreadLocal 使用了一个数组来存储每个线程的局部变量副本。通过计算线程的哈希码并作为索引， FastThreadLocal 可以快速地访问和修改线程局部变量的值。
+
+FastThreadLocal 的原理与 ThreadLocal 类似，都是通过在每个线程中维护一个线程本地变量的副本来实现的。不同之处在于， FastThreadLocal 使用了一种更加高效的数据结构来管理线程本地变量，从而提高了访问速度和减少了内存消耗。
+
+**为什么这么快？**
+
+采用了InternalThreadLocalMap替代了ThreadLocal的ThreadLocalMap
+
+1. **数组存储结构**
+
+​	•	InternalThreadLocalMap 使用了一个数组来存储线程局部变量（类似于 Object[]），每个 FastThreadLocal 都有一个唯一的索引值，可以直接通过索引访问对应的数组槽位。这种方式避免了哈希冲突和线性探测操作，从而显著提高了读取和写入的效率。
+
+​	•	和 ThreadLocalMap 不同，InternalThreadLocalMap 不需要通过键进行哈希计算，而是直接通过索引定位变量，性能非常接近于 O(1)。
+
+2. **索引唯一性**
+
+​	•	每一个 FastThreadLocal 在创建时都会分配一个全局唯一的索引值，这个索引值直接对应到 InternalThreadLocalMap 的数组槽位。
+
+​	•	相比于传统的 ThreadLocalMap，不需要进行哈希冲突的处理和扩容。
+
+3. **避免线性探测**
+
+​	•	Java 的 ThreadLocalMap 是基于哈希表的，当发生哈希冲突时会采用线性探测法处理，而这在高并发和大量线程局部变量的情况下性能会下降。
+
+​	•	InternalThreadLocalMap 直接使用数组存储，完全消除了这种线性探测的复杂性。
+
+![image-20241115112327504](./assets/image-20241115112327504.png)
+
+
+
+
+
+# LockSupport
+
+**LockSupport是用来创建锁和其他同步工具类的基本线程阻塞原语。**AQS就是通过`lockSupport.park()和lockSupport.unpark()`实现线程的阻塞和唤醒的。
+
+## 三种让线程等待和唤醒的方法
+
+1. Object的wait()和notify()
+
+2. JUC包中Condition的await()方法让线程等待，使用sinal()方法唤醒
+3. LockSupport类可以阻塞当前线程以及唤醒指定被阻塞的线程
+
