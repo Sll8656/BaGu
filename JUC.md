@@ -123,6 +123,8 @@
 
  问：Synchronized的原理
 
+![image-20241125135957567](./assets/image-20241125135957567.png)
+
 64位虚拟机中 一个对象由mark word和class word组成， classword存储类的相关信息，mark word由hash值，分代年龄，锁标识组成。
 
 重量级锁：将mark word指向monitor，如果owner为空。则monitor的owner标记为本线程，如果已经有owner了，则进入EntryList。等待owner释放之后，EntryList中的线程再竞争锁
@@ -157,6 +159,8 @@ Thread-1获取锁发现锁记录地址不是自己，就让Object指向monitor�
 
 偏向锁：
 
+哪个线程先占有锁对象，锁对象的Mark Word就指向哪个线程的栈帧中的锁记录。
+
 轻量级锁在没有竞争时(就自己这个线程)，每次重入仍然需要执行CAS操作。
 
 Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将**线程ID**（偏向锁是**锁记录**）设置到对象的 Mark Word头，之后发现这个线程ID是自己的就表示没有竞争，不用重新CAS。以后只要不发生竞争，这个对象就归该线程所有
@@ -173,7 +177,7 @@ Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将**�
 
 ---
 
-问：你了解过锁升级吗？
+### 问：你了解过锁升级吗？
 
 答：Java中的synchronized有偏向锁、轻量级锁、重量级锁三种形式，分别对应了锁只被一个线程持有、不同线程交替持有、多线程竞争锁三种情况。
 
@@ -185,7 +189,25 @@ Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将**�
 
 ---
 
-问：说一说JMM（Java内存模型）
+### synchronized执行流程
+
+1）线程抢锁时，JVM首先检测内置锁对象Mark Word中biased_lock（偏向锁标识）是否设置成1，lock（锁标志位）是否为01，如果都满足，确认内置锁对象为可偏向状态。
+
+2）在内置锁对象确认为可偏向状态之后，JVM检查Mark Word中线程ID是否为抢锁线程ID，如果是，就表示抢锁线程处于偏向锁状态，抢锁线程快速获得锁，开始执行临界区代码。
+
+3）如果Mark Word中线程ID并未指向抢锁线程，就通过CAS操作竞争锁。如果竞争成功，就<font   color=red>将Mark Word中线程ID设置为抢锁线程</font>，偏向标志位设置为1，锁标志位设置为01，然后执行临界区代码，此时内置锁对象处于偏向锁状态。
+
+4）如果CAS操作竞争失败，就说明发生了竞争，撤销偏向锁，进而升级为轻量级锁。
+
+5）JVM使用CAS将锁对象的<font color=red>Mark Word替换为抢锁线程的锁记录指针</font>，如果成功，抢锁线程就获得锁。如果替换失败，就表示其他线程竞争锁，JVM尝试使用CAS自旋替换抢锁线程的锁记录指针，如果自旋成功（抢锁成功），那么锁对象依然处于轻量级锁状态。
+
+6）如果JVM的CAS替换锁记录指针自旋失败，轻量级锁膨胀为重量级锁，后面等待锁的线程也要进入阻塞状态。
+
+### 三种内置锁的对比
+
+![image-20241125150731816](./assets/image-20241125150731816.png)
+
+### 说一说JMM（Java内存模型）
 
 答：
 
@@ -195,7 +217,7 @@ Java6中引入了偏向锁来做进一步优化：只有第一次使用CAS将**�
 
 ---
 
-说一说CAS
+### 说一说CAS
 
 CAS全称是Compare and Swap，体现的是乐观锁的思想，在无锁情况下保证线程操作共享数据的原子性。在JUC包下实现的很多类都用到了CAS操作。
 
@@ -513,7 +535,49 @@ Java并发编程三大特征：
 * 可见性  volatile、synchronized、 lock
 * 有序性（指令重排序）   volatile
 
----
+
+
+## 线程安全的阻塞队列
+
+```java
+import java.util.LinkedList;
+import java.util.Queue;
+
+public class CustomBlockingQueue<T> {
+    private final Queue<T> queue = new LinkedList<>(); // 用于存储队列元素
+    private final int capacity; // 队列的容量
+
+    public CustomBlockingQueue(int capacity) {
+        this.capacity = capacity;
+    }
+
+    // 添加元素到队列中（阻塞操作）
+    public synchronized void put(T item) throws InterruptedException {
+        while (queue.size() == capacity) {
+            wait(); // 队列已满，阻塞当前线程
+        }
+        queue.add(item); // 添加元素到队列
+        notifyAll(); // 唤醒其他线程（可能是消费者线程）
+    }
+
+    // 从队列中取出元素（阻塞操作）
+    public synchronized T take() throws InterruptedException {
+        while (queue.isEmpty()) {
+            wait(); // 队列为空，阻塞当前线程
+        }
+        T item = queue.poll(); // 获取并移除队列头部的元素
+        notifyAll(); // 唤醒其他线程（可能是生产者线程）
+        return item;
+    }
+
+    // 返回队列的当前大小
+    public synchronized int size() {
+        return queue.size();
+    }
+}
+```
+
+
 
 # 线程池
 
@@ -599,6 +663,56 @@ ThreadLoca就是线程本地量，它其实是一种线程的隔离机制，保�
 
 数据库连接管理、事务管理、日志追踪
 
+## 持有者
+
+**早期版本的ThreadLocalMap的持有者是ThreadLocal，而新版本的ThreadLocalMap的持有者是Thread。**
+
+原因：早期版本ThreadLocalMap的拥有者为ThreadLocal，在Thread（线程）实例被销毁后，ThreadLocalMap还是存在的；新版本的ThreadLocalMap的拥有者为Thread，现在当Thread实例被销毁后，ThreadLocalMap也会随之被销毁，在一定程度上能减少内存的消耗。
+
+**早期版本的key为Thread实例，新版本的key实例为ThreadLocal实例**
+
+原因：每个ThreadLocalMap存储的“Key-Value对”数量变少。早期版本的“Key-Value对”数量与线程个数强关联，若线程数量多，则ThreadLocalMap存储“Key-Value对”数量也多。新版本的ThreadLocalMap的Key为ThreadLocal实例，多线程情况下ThreadLocal实例比线程数少。
+
+## 内存泄漏问题
+
+**1.key的泄漏**
+
+栈上的ThreadLocal Ref引用不再使用了，即当前方法结束处理后，这个对象引用就不再使用了，那么，ThreadLocal对象因为还有一条引用链存在，如果是强引用的话，这里就会导致ThreadLocal对象无法被回收，可能导致OOM。
+
+解决方案：**使用弱引用**
+
+![image-20241125105808995](./assets/image-20241125105808995.png)
+
+线程中的栈帧对Threadocal实例一定是强引用的，在线程执行完funcA()，funcA()的方法栈帧将被销毁，栈帧中的引用会解除。此刻如果Map中的key是强引用，就会导致Key引用指向的ThreadLocal实例及其Value值都不能被GC回收，这将造成严重的内存泄漏，如图所示：
+
+![image-20241125110055325](./assets/image-20241125110055325.png)
+
+由于ThreadLocalMap中Entry的Key使用了弱引用，在下次GC发生时，就可以使那些没有被其他强引用指向、仅被Entry的Key所指向的ThreadLocal实例能被顺利回收。并且，在Entry的Key引用被回收之后，其Entry的Key值变为null。后续当ThreadLocal的get()、set()或remove()被调用时，ThreadLocalMap的内部代码会清除这些Key为null的Entry，从而完成相应的内存释放
+
+**2.value的泄漏**
+
+假设我们使用了线程池，如果Thread对象一直被占用使用中（ 如在线程池中被重复使用 ），但是此时我们的ThreadLocalMap（thread 的内部属性）生命周期和Thread的一样，它不会回收，这时候就出现了一个现象：Value这条引用链（Entry中的value引用的值）就一直存在，那么就会导致ThreadLocalMap无法被JVM回收，可能导致OOM。
+
+解决方法：
+
+**1）探测式清理**
+
+当线程调用 ThreadLocal 的 get() 、 set() 或 remove() 方法时，会触发对 ThreadLocalMap 的清理。此时，ThreadLocalMap 会检查所有键（ThreadLocal 实例），并移除那些已经被垃圾回收的key键及其对应的value 值。这种清理是主动的，因为它是在每次操作 ThreadLocal 时进行的。
+
+**2）启发式清理**
+
+在 ThreadLocalMap 的 set() 方法中，有一个阈值（默认为 ThreadLocalMap.Entry 数组长度的1/4）。当 ThreadLocalMap 中的 Entry 对象被删除（通过键的弱引用被垃圾回收）并且剩余的 Entry 数量大于这个阈值时，会触发一次启发式清理操作。这种清理是启发式的，因为它不是每次操作都进行，而是基于一定的条件和概率。
+
+
+
+**最好的方案：手动清理**
+
+这通常发生在使用线程池的场景中，因为线程池中的线程通常是长期存在的，它们的ThreadLocal变量也不会自动清理，这可能导致内存泄漏。前面讲了，JDK已经用尽全力去解决了，JDK 用了三个办法，来解决内存泄漏。尽管有弱引用以及这些清理机制，但最佳实践业务主动清理，业务上解决这个问题的一个方法是，每当使用完ThreadLocal变量后，显式地调用 remove() 方法来清除它：如何业务主动清理？在使用完 ThreadLocal 后显式调用 remove()方法 ，以确保不再需要的值能够被及时回收，key和value 都同时清理，一锅端。这样可以避免潜在的内存泄漏问题，并减少垃圾回收的压力
+
+![image-20241125112323845](./assets/image-20241125112323845.png)
+
+
+
 ## static final 修饰
 
 规范：推荐使用static final 修饰ThreadLocal对象
@@ -614,13 +728,13 @@ ThreadLocal 实例作为ThreadLocalMap的Key，针对一个线程内所有操作
 private static final ThreadLocal<Foo> LOCAL_FOO = new ThreadLocal<Foo>();
 ```
 
-由于使用static 、final修饰TheadLocal对象实例， 导致了这个被 ThreadLocalMap中Entry的Key所引用的ThreadLocal对象实例，一直存在强引用。
+<font color="red">由于使用static 、final修饰TheadLocal对象实例， 导致了这个被 ThreadLocalMap中Entry的Key所引用的ThreadLocal对象实例，一直存在强引用。</font>
 
 这里有一个严重后果，这个 使用static 、final修饰TheadLocal对象实例 一直不会被GC，一直存在，一直存在......
 
 ![image-20241115102008027](./assets/image-20241115102008027.png)
 
-## **InheritableThreaLocal**
+## **InheritableThreadLocal**
 
 在 Java 中，每个线程都有自己的线程本地变量，称为 ThreadLocal 变量。然而，在使用线程池或创
 
@@ -718,7 +832,7 @@ FastThreadLocal 的原理与 ThreadLocal 类似，都是通过在每个线程中
 
 1. **数组存储结构**
 
-​	•	InternalThreadLocalMap 使用了一个数组来存储线程局部变量（类似于 Object[]），每个 FastThreadLocal 都有一个唯一的索引值，可以直接通过索引访问对应的数组槽位。这种方式避免了哈希冲突和线性探测操作，从而显著提高了读取和写入的效率。
+​	•	InternalThreadLocalMap **使用了一个数组**来存储线程局部变量（类似于 Object[]），每个 FastThreadLocal 都有一个唯一的索引值，可以直接通过索引访问对应的数组槽位。这种方式避免了哈希冲突和线性探测操作，从而显著提高了读取和写入的效率。
 
 ​	•	和 ThreadLocalMap 不同，InternalThreadLocalMap 不需要通过键进行哈希计算，而是直接通过索引定位变量，性能非常接近于 O(1)。
 
