@@ -133,7 +133,7 @@
 
 * Synchronized采用互斥的方式让统一时刻最多只有一份线程能持有对象锁
 * 底层由monitor实现，monitor是jvm级别的对象（ c++实现），线程获得锁需要使用对象（锁）关联monitor
-* 在monitor内部有三个属性，分别是owner、entrylist、waitset。owner是关联的获得锁的线程，并且只能关联一个线程；entrylist关联的事处于阻塞状态的线程；waitset关联的是处于waiting状态的线程
+* 在monitor内部有三个属性，分别是owner、entrylist、waitset。owner是关联的获得锁的线程，并且只能关联一个线程；entrylist关联的是处于阻塞状态的线程；waitset关联的是处于waiting状态的线程
 
 ---
 
